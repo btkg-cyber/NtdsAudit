@@ -6,9 +6,17 @@
     	<ImplicitUsings>enable</ImplicitUsings>
     	<Nullable>enable</Nullable>
   	</PropertyGroup>
-	<ItemGroup>
+	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
 		<PackageReference Include="Microsoft.Database.ManagedEsent" Version="3.2.0" />
+	</ItemGroup>
+	<ItemGroup>
 		<PackageReference Include="Registry" Version="2026.10.1" />
 		<PackageReference Include="System.CommandLine" Version="2.0.5" />
 	</ItemGroup>
+	<ItemGroup>
+		<None Include="esedb-wrapper.py" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+	<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+		<DefineConstants>$(DefineConstants);LINUX_ESENT</DefineConstants>
+	</PropertyGroup>
 </Project>

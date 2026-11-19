@@ -1,16 +1,10 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.2.11415.280
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{17463B36-69CB-4374-9903-D3DA8EF4B4FB}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NtdsAudit", "NtdsAudit\NtdsAudit.csproj", "{3F576F6B-DC7C-4282-B0F9-43FA8FE25276}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "lib", "lib", "{780E0F59-A0E0-4013-BBE8-2CC03637A368}"
-	ProjectSection(SolutionItems) = preProject
-		lib\RegistryParser.dll = lib\RegistryParser.dll
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

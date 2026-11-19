@@ -1,3 +1,0 @@
-[submodule "src/registryparser"]
-	path = src/registryparser
-	url = https://github.com/codagroup/registryparser.git

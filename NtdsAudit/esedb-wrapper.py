@@ -32,7 +32,8 @@ with open(sys.argv[2], "rb") as stream:
     table = database.table(sys.argv[3])
 
     if sys.argv[1] == "columns":
-        print(json.dumps([column.name for column in table.columns.values()]))
+        columns = table.columns.values() if hasattr(table.columns, "values") else table.columns
+        print(json.dumps([column.name for column in columns]))
     else:
         print(json.dumps([
             {name: encode(value) for name, value in record.as_dict().items()}

@@ -2,9 +2,11 @@ namespace Microsoft.Isam.Esent.Interop
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.Globalization;
     using System.Linq;
     using System.Text.Json;
+    using CODA.NtdsAudit;
 
     internal enum JET_DbInfo { PageSize }
     internal enum JET_param { DatabasePageSize, Recovery, CircularLog }
@@ -31,31 +33,60 @@ namespace Microsoft.Isam.Esent.Interop
     {
         public static string ActiveDbPath { get; set; } = string.Empty;
 
-        private static readonly Dictionary<string, List<Dictionary<string, JsonElement>>.Enumerator> Cursors = new();
+        private static readonly Dictionary<string, int> Cursors = new();
         private static readonly Dictionary<string, Dictionary<string, JsonElement>> Current = new();
         private static readonly Dictionary<string, List<Dictionary<string, JsonElement>>> TableCache = new();
 
         public static void MoveBeforeFirst(JET_SESID sesid, JET_TABLEID table)
         {
-            Cursors[$"{sesid.Path}|{table.Table}"] = ReadRows(sesid.Path, table.Table).GetEnumerator();
+            Cursors[$"{sesid.Path}|{table.Table}"] = 0;
         }
 
         public static bool TryMoveNext(JET_SESID sesid, JET_TABLEID table)
         {
             var key = $"{sesid.Path}|{table.Table}";
-            if (!Cursors.TryGetValue(key, out var enumerator))
+            if (!Cursors.TryGetValue(key, out var index))
             {
                 MoveBeforeFirst(sesid, table);
-                enumerator = Cursors[key];
+                index = 0;
             }
 
-            if (!enumerator.MoveNext()) return false;
-            Current[key] = enumerator.Current;
+            var rows = ReadRows(sesid.Path, table.Table);
+            if (index >= rows.Count) return false;
+            Current[key] = rows[index];
+            Cursors[key] = index + 1;
             return true;
         }
 
         public static Dictionary<string, JsonElement> CurrentRow(JET_SESID sesid, JET_TABLEID table) =>
             Current[$"{sesid.Path}|{table.Table}"];
+
+        public static List<string> ReadColumnNames(string path, string table)
+        {
+            path = string.IsNullOrEmpty(path) ? ActiveDbPath : path;
+            if (string.IsNullOrEmpty(path)) throw new InvalidOperationException("No NTDS database has been opened");
+
+            var script = System.IO.Path.Combine(AppContext.BaseDirectory, "esedb-wrapper.py");
+            var start = new System.Diagnostics.ProcessStartInfo("python3")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+            };
+            start.ArgumentList.Add(script);
+            start.ArgumentList.Add("columns");
+            start.ArgumentList.Add(path);
+            start.ArgumentList.Add(table);
+            start.Environment.TryGetValue("PYTHONPATH", out var pythonPath);
+            start.Environment["PYTHONPATH"] = string.IsNullOrEmpty(pythonPath)
+                ? "/tmp/dissect-esedb"
+                : $"/tmp/dissect-esedb{System.IO.Path.PathSeparator}{pythonPath}";
+
+            using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("Failed to start esedb-wrapper.py");
+            var json = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0) throw new InvalidOperationException($"Linux ESE column wrapper failed with exit code {process.ExitCode}");
+            return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
 
         public static List<Dictionary<string, JsonElement>> ReadRows(string path, string table)
         {
@@ -63,7 +94,12 @@ namespace Microsoft.Isam.Esent.Interop
             if (string.IsNullOrEmpty(path)) throw new InvalidOperationException("No NTDS database has been opened");
 
             var cacheKey = $"{path}|{table}";
-            if (TableCache.TryGetValue(cacheKey, out var cached)) return cached;
+            if (TableCache.TryGetValue(cacheKey, out var cached))
+            {
+                return cached;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
 
             var script = System.IO.Path.Combine(AppContext.BaseDirectory, "esedb-wrapper.py");
             var start = new System.Diagnostics.ProcessStartInfo("python3")
@@ -86,6 +122,9 @@ namespace Microsoft.Isam.Esent.Interop
             if (process.ExitCode != 0) throw new InvalidOperationException($"Linux ESE wrapper failed with exit code {process.ExitCode}");
             var rows = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(json) ?? [];
             TableCache[cacheKey] = rows;
+            stopwatch.Stop();
+            if (NtdsAuditor.ShowDebugOutput)
+                ConsoleEx.WriteDebug($"LinuxEse cache miss: {table} ({rows.Count} rows) in {stopwatch.Elapsed}");
             return rows;
         }
 
@@ -133,8 +172,10 @@ namespace Microsoft.Isam.Esent.Interop
         public static IDictionary<string, JET_COLUMNID> GetColumnDictionary(JET_SESID sesid, JET_TABLEID table)
         {
             var result = new Dictionary<string, JET_COLUMNID>(StringComparer.OrdinalIgnoreCase);
-            var first = LinuxEse.ReadRows(sesid.Path, table.Table).FirstOrDefault();
-            if (first is not null) foreach (var name in first.Keys) result[name] = new JET_COLUMNID(name);
+            foreach (var name in LinuxEse.ReadColumnNames(sesid.Path, table.Table))
+            {
+                result.TryAdd(name, new JET_COLUMNID(name));
+            }
             return result;
         }
 

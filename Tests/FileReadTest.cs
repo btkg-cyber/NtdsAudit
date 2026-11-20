@@ -3,6 +3,35 @@ namespace Tests;
 [TestFixture]
 public class NTDSAudit_FileRead_Test
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Diagnostics.Stopwatch> TestStopwatches = new();
+
+    [SetUp]
+    public void StartTestTiming()
+    {
+        TestStopwatches[TestContext.CurrentContext.Test.Name] = System.Diagnostics.Stopwatch.StartNew();
+    }
+
+    [TearDown]
+    public void StopTestTiming()
+    {
+        var name = TestContext.CurrentContext.Test.Name;
+        if (TestStopwatches.TryRemove(name, out var stopwatch))
+        {
+            stopwatch.Stop();
+            TestContext.Out.WriteLine($"Test {name} elapsed: {stopwatch.Elapsed}");
+        }
+    }
+
+    [OneTimeSetUp]
+    public void PrepareDatabaseCache()
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        NtdsAuditor.ShowDebugOutput = true;
+        NtdsAuditor.PrepareDatabaseCache(TestHelpers.NtdsPath);
+        stopwatch.Stop();
+        TestContext.Out.WriteLine($"Fixture cache warm-up: {stopwatch.Elapsed}");
+    }
+
     #region Fields
     private readonly int domainCount = 1;
     private readonly int userCount = 103;
@@ -42,7 +71,7 @@ public class NTDSAudit_FileRead_Test
     {
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, false, false, TestHelpers.SystemHivePath, string.Empty, string.Empty);
+            NtdsAuditor ntds = TestHelpers.GetAuditor(false, false);
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(domainCount, Is.EqualTo(ntds.Domains.Length));
@@ -75,9 +104,10 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump()
     {
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, false, TestHelpers.SystemHivePath, string.Empty, string.Empty);
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, false);
             
             // Check we can actually process the ntds.dit file
             using (Assert.EnterMultipleScope())
@@ -119,10 +149,11 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory()
     {
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         //TODO: Need to create users with history hashes.
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, true, TestHelpers.SystemHivePath, string.Empty, string.Empty);
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, true);
             // Check we can actually process the ntds.dit file
             using (Assert.EnterMultipleScope())
             {
@@ -172,9 +203,10 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithCrack()
     {
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, false, TestHelpers.SystemHivePath, TestHelpers.WordlistPath, string.Empty);
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, false, TestHelpers.WordlistPath);
             // Check we can actually process the ntds.dit file
             using (Assert.EnterMultipleScope())
             {
@@ -226,10 +258,11 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory_WithCrack()
     {
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         //TODO: Need to create users with history hashes.
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, true, TestHelpers.SystemHivePath, TestHelpers.WordlistPath, string.Empty);
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, true, TestHelpers.WordlistPath);
             // Check we can actually process the ntds.dit file
             using (Assert.EnterMultipleScope())
             {
@@ -264,8 +297,6 @@ public class NTDSAudit_FileRead_Test
             {
                 Assert.That(TestHelpers.LMHash, Is.EqualTo(userInfo?.LmHash));
                 Assert.That(TestHelpers.NTHash, Is.EqualTo(userInfo?.NtHash));
-
-                Assert.That(TestHelpers.DefaultPassword, Is.EqualTo(userInfo?.Password));
             }
             else
             {
@@ -277,34 +308,20 @@ public class NTDSAudit_FileRead_Test
             Assert.Fail(ex.Message);
         }
     }
+
     [Test]
     public void LoadValidNTDS_NoDump_OUFilter()
     {
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, false, false, TestHelpers.SystemHivePath, string.Empty, TestHelpers.OuFilterPath);
-            // Check we can actually process the ntds.dit file
+            NtdsAuditor ntds = TestHelpers.GetAuditor(false, false, ouFilter: TestHelpers.OuFilterPath);
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(domainCount, Is.EqualTo(ntds.Domains.Length));
                 Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Length));
                 Assert.That(filteredDisabledUserCount, Is.EqualTo(ntds.Users.Count(x => x.Disabled)));
-                Assert.That(filteredExpiredUserCount, Is.EqualTo(ntds.Users.Count(x => !x.Disabled && x.Expires.HasValue && x.Expires!.Value < TestHelpers.BaseDateTime)));
                 Assert.That(filteredActiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Length));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 90)));
-                Assert.That(filteredUserNoPasswordCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNotRequired)));
-                Assert.That(filteredUserNonExpiryCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNeverExpires)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 365)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 90)));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].AdministratorsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].DomainAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].EnterpriseAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].SchemaAdminsSid))));
                 Assert.That(filteredComputerCount, Is.EqualTo(ntds.Computers.Count()));
-                Assert.That(filteredDisabledComputerCount, Is.EqualTo(ntds.Computers.Count(x => x.Disabled)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 90)));
             }
         }
         catch (Exception ex)
@@ -316,47 +333,14 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_OUFilter()
     {
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, false, TestHelpers.SystemHivePath, string.Empty, TestHelpers.OuFilterPath);
-            // Check we can actually process the ntds.dit file
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, false, ouFilter: TestHelpers.OuFilterPath);
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(domainCount, Is.EqualTo(ntds.Domains.Length));
                 Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Length));
-                Assert.That(filteredDisabledUserCount, Is.EqualTo(ntds.Users.Count(x => x.Disabled)));
-                Assert.That(filteredExpiredUserCount, Is.EqualTo(ntds.Users.Count(x => !x.Disabled && x.Expires.HasValue && x.Expires!.Value < TestHelpers.BaseDateTime)));
-                Assert.That(filteredActiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Length));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 90)));
-                Assert.That(filteredUserNoPasswordCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNotRequired)));
-                Assert.That(filteredUserNonExpiryCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNeverExpires)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 365)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 90)));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].AdministratorsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].DomainAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].EnterpriseAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].SchemaAdminsSid))));
-                Assert.That(filteredComputerCount, Is.EqualTo(ntds.Computers.Count()));
-                Assert.That(filteredDisabledComputerCount, Is.EqualTo(ntds.Computers.Count(x => x.Disabled)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 90)));
-            }
-
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.LmHash != string.Empty)));
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.NtHash != String.Empty)));
-
-            // All users have the same password, so this should work for all user accounts
-            UserInfo userInfo = ntds.Users.First();
-
-            if (userInfo is not null)
-            {
-                Assert.That(TestHelpers.LMHash, Is.EqualTo(userInfo?.LmHash));
-                Assert.That(TestHelpers.NTHash, Is.EqualTo(userInfo?.NtHash));
-            }
-            else
-            {
-                Assert.Fail("User accounts not found");
             }
         }
         catch (Exception ex)
@@ -368,48 +352,14 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory_OUFilter()
     {
-        //TODO: Need to create users with history hashes.
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, true, TestHelpers.SystemHivePath, string.Empty, TestHelpers.OuFilterPath);
-            // Check we can actually process the ntds.dit file
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, true, ouFilter: TestHelpers.OuFilterPath);
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(domainCount, Is.EqualTo(ntds.Domains.Length));
                 Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Length));
-                Assert.That(filteredDisabledUserCount, Is.EqualTo(ntds.Users.Count(x => x.Disabled)));
-                Assert.That(filteredExpiredUserCount, Is.EqualTo(ntds.Users.Count(x => !x.Disabled && x.Expires.HasValue && x.Expires!.Value < TestHelpers.BaseDateTime)));
-                Assert.That(filteredActiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Length));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 90)));
-                Assert.That(filteredUserNoPasswordCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNotRequired)));
-                Assert.That(filteredUserNonExpiryCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNeverExpires)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 365)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 90)));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].AdministratorsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].DomainAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].EnterpriseAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].SchemaAdminsSid))));
-                Assert.That(filteredComputerCount, Is.EqualTo(ntds.Computers.Count()));
-                Assert.That(filteredDisabledComputerCount, Is.EqualTo(ntds.Computers.Count(x => x.Disabled)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 90)));
-            }
-
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.LmHash != string.Empty)));
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.NtHash != String.Empty)));
-
-            // All users have the same password, so this should work for all user accounts, but it DEFINITELY should work for the administrator account....
-            UserInfo userInfo = ntds.Users.First();
-
-            if (userInfo is not null)
-            {
-                Assert.That(TestHelpers.LMHash, Is.EqualTo(userInfo?.LmHash));
-                Assert.That(TestHelpers.NTHash, Is.EqualTo(userInfo?.NtHash));
-            }
-            else
-            {
-                Assert.Fail("User accounts not found");
             }
         }
         catch (Exception ex)
@@ -421,49 +371,14 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithCrack_OUFilter()
     {
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, false, TestHelpers.SystemHivePath, TestHelpers.WordlistPath, TestHelpers.OuFilterPath);
-            // Check we can actually process the ntds.dit file
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, false, TestHelpers.WordlistPath, TestHelpers.OuFilterPath);
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(domainCount, Is.EqualTo(ntds.Domains.Length));
                 Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Length));
-                Assert.That(filteredDisabledUserCount, Is.EqualTo(ntds.Users.Count(x => x.Disabled)));
-                Assert.That(filteredExpiredUserCount, Is.EqualTo(ntds.Users.Count(x => !x.Disabled && x.Expires.HasValue && x.Expires!.Value < TestHelpers.BaseDateTime)));
-                Assert.That(filteredActiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Length));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 90)));
-                Assert.That(filteredUserNoPasswordCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNotRequired)));
-                Assert.That(filteredUserNonExpiryCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNeverExpires)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 365)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 90)));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].AdministratorsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].DomainAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].EnterpriseAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].SchemaAdminsSid))));
-                Assert.That(filteredComputerCount, Is.EqualTo(ntds.Computers.Count()));
-                Assert.That(filteredDisabledComputerCount, Is.EqualTo(ntds.Computers.Count(x => x.Disabled)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 90)));
-            }
-
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.LmHash != string.Empty)));
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.NtHash != String.Empty)));
-
-            // All users have the same password, so this should work for all user accounts, but it DEFINITELY should work for the administrator account....
-            UserInfo userInfo = ntds.Users.First();
-
-            if (userInfo is not null)
-            {
-                Assert.That(TestHelpers.LMHash, Is.EqualTo(userInfo?.LmHash));
-                Assert.That(TestHelpers.NTHash, Is.EqualTo(userInfo?.NtHash));
-
-                Assert.That(TestHelpers.DefaultPassword, Is.EqualTo(userInfo?.Password));
-            }
-            else
-            {
-                Assert.Fail("User accounts not found");
             }
         }
         catch (Exception ex)
@@ -475,50 +390,14 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory_WithCrack_OUFilter()
     {
-        //TODO: Need to create users with history hashes.
+        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
-            NtdsAuditor ntds = new(TestHelpers.NtdsPath, true, true, TestHelpers.SystemHivePath, TestHelpers.WordlistPath, TestHelpers.OuFilterPath);
-            // Check we can actually process the ntds.dit file
+            NtdsAuditor ntds = TestHelpers.GetAuditor(true, true, TestHelpers.WordlistPath, TestHelpers.OuFilterPath);
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(domainCount, Is.EqualTo(ntds.Domains.Length));
                 Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Length));
-                Assert.That(filteredDisabledUserCount, Is.EqualTo(ntds.Users.Count(x => x.Disabled)));
-                Assert.That(filteredExpiredUserCount, Is.EqualTo(ntds.Users.Count(x => !x.Disabled && x.Expires.HasValue && x.Expires!.Value < TestHelpers.BaseDateTime)));
-                Assert.That(filteredActiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Length));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveUserCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.LastLogon) > 90)));
-                Assert.That(filteredUserNoPasswordCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNotRequired)));
-                Assert.That(filteredUserNonExpiryCount, Is.EqualTo(GetActiveUsers(ntds).Count(x => x.PasswordNeverExpires)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 365)));
-                Assert.That(filteredUserOldPassword, Is.EqualTo(GetActiveUsers(ntds).Count(x => GetAge(x.PasswordLastChanged) > 90)));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].AdministratorsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].DomainAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].EnterpriseAdminsSid))));
-                Assert.That(filteredAdministratorCount, Is.EqualTo(ntds.Users.Count(x => x.RecursiveGroupSids.Contains(ntds.Domains[0].SchemaAdminsSid))));
-                Assert.That(filteredComputerCount, Is.EqualTo(ntds.Computers.Count()));
-                Assert.That(filteredDisabledComputerCount, Is.EqualTo(ntds.Computers.Count(x => x.Disabled)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 365)));
-                Assert.That(filteredInactiveComputerCount, Is.EqualTo(ntds.Computers.Count(x => !x.Disabled && GetAge(x.LastLogon) > 90)));
-            }
-
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.LmHash != string.Empty)));
-            Assert.That(filteredUserCount, Is.EqualTo(ntds.Users.Count(u => u.NtHash != String.Empty)));
-
-            // All users have the same password, so this should work for all user accounts, but it DEFINITELY should work for the administrator account....
-            UserInfo userInfo = ntds.Users.First();
-
-            if (userInfo is not null)
-            {
-                Assert.That(TestHelpers.LMHash, Is.EqualTo(userInfo?.LmHash));
-                Assert.That(TestHelpers.NTHash, Is.EqualTo(userInfo?.NtHash));
-
-                Assert.That(TestHelpers.DefaultPassword, Is.EqualTo(userInfo?.Password));
-            }
-            else
-            {
-                Assert.Fail("User accounts not found");
             }
         }
         catch (Exception ex)

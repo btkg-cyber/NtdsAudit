@@ -1,4 +1,5 @@
-﻿#pragma warning disable IDE0130 // Namespace does not match folder structure
+﻿#if !LINUX_ESENT
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 namespace Microsoft.Isam.Esent.Interop
 #pragma warning restore IDE0130 // Namespace does not match folder structure
 {
@@ -16,3 +17,4 @@ namespace Microsoft.Isam.Esent.Interop
         }
     }
 }
+#endif

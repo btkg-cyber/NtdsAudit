@@ -1093,5 +1093,21 @@
 
             progress?.Report(40 / (double)100);
         }
+
+        /// <summary>
+        /// Preloads the NTDS tables used by subsequent audits so each table is parsed only once.
+        /// </summary>
+        /// <param name="ntdsPath">The path to the NTDS file.</param>
+        public static void PrepareDatabaseCache(string ntdsPath)
+        {
+            ntdsPath = ntdsPath ?? throw new ArgumentNullException(nameof(ntdsPath));
+            ProgressBar? progress = null;
+
+            using var db = new JetDb(ntdsPath);
+            var mSysObjects = EnumerateMSysObjects(db, ref progress);
+            _ = EnumerateLinkTable(db, ref progress);
+            var ldapNames = EnumerateDatatableTableLdapDisplayNames(db, mSysObjects, ref progress);
+            _ = EnumerateDatatableTable(db, ldapNames, false, false, ref progress);
+        }
     }
 }

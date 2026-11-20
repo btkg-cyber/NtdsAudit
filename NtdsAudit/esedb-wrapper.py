@@ -3,10 +3,14 @@ import json
 import sys
 from datetime import datetime
 
-from dissect.esedb import EseDB
+from dissect.database.ese import ESE
 
 
 def encode(value):
+    if isinstance(value, (list, tuple)):
+        if len(value) == 1:
+            return encode(value[0])
+        return {"string": str(value)}
     if value is None:
         return None
     if isinstance(value, bytes):
@@ -28,12 +32,11 @@ if len(sys.argv) != 4:
     raise SystemExit("usage: esedb-wrapper.py rows|columns DATABASE TABLE")
 
 with open(sys.argv[2], "rb") as stream:
-    database = EseDB(stream)
+    database = ESE(stream)
     table = database.table(sys.argv[3])
 
     if sys.argv[1] == "columns":
-        columns = table.columns.values() if hasattr(table.columns, "values") else table.columns
-        print(json.dumps([column.name for column in columns]))
+        print(json.dumps([column.name for column in table.columns]))
     else:
         print(json.dumps([
             {name: encode(value) for name, value in record.as_dict().items()}

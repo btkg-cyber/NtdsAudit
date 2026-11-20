@@ -76,10 +76,10 @@ The snapshot directory contains the required database and registry hive files.
 
 Linux support uses a Python shim for reading the ESE-based `ntds.dit` database. Python 3 is therefore required when running NtdsAudit on Linux.
 
-Install the [`dissect.esedb`](https://github.com/fox-it/dissect.esedb) parser before running the application:
+Install the [`dissect.database`](https://github.com/fox-it/dissect.database) parser before running the application:
 
 ```
-python3 -m pip install dissect.esedb
+python3 -m pip install dissect.database
 ```
 
 Windows continues to use `Microsoft.Database.ManagedEsent`.
@@ -89,7 +89,7 @@ Windows continues to use `Microsoft.Database.ManagedEsent`.
 To download locally:
 
 ```
-git clone https://github.com/btkg-cyber/ntdsaudit.git
+git clone https://github.com/codagroup/ntdsaudit.git
 ```
 
 Build the debug variant:
@@ -106,6 +106,4 @@ dotnet publish
 
 ## Credits
 
-The Linux ESE database shim uses [`dissect.esedb`](https://pypi.org/project/dissect.esedb/), developed by the Dissect team at Fox-IT / NCC Group. `dissect.esedb` is released under the Apache License 2.0.
-
-`dissect.esedb` has been superseded by [`dissect.database`](https://github.com/fox-it/dissect.database), which provides the same ESE functionality along with broader database support.
+The Linux ESE database shim uses [`dissect.database`](https://github.com/fox-it/dissect.database), developed by the Dissect team at Fox-IT / NCC Group. `dissect.database` is released under the Apache License 2.0.

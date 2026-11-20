@@ -76,10 +76,8 @@ namespace Microsoft.Isam.Esent.Interop
             start.ArgumentList.Add("columns");
             start.ArgumentList.Add(path);
             start.ArgumentList.Add(table);
-            start.Environment.TryGetValue("PYTHONPATH", out var pythonPath);
-            start.Environment["PYTHONPATH"] = string.IsNullOrEmpty(pythonPath)
-                ? "/tmp/dissect-esedb"
-                : $"/tmp/dissect-esedb{System.IO.Path.PathSeparator}{pythonPath}";
+
+            ConfigurePythonEnvironment(start);
 
             using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("Failed to start esedb-wrapper.py");
             var json = process.StandardOutput.ReadToEnd();
@@ -111,10 +109,8 @@ namespace Microsoft.Isam.Esent.Interop
             start.ArgumentList.Add("rows");
             start.ArgumentList.Add(path);
             start.ArgumentList.Add(table);
-            start.Environment.TryGetValue("PYTHONPATH", out var pythonPath);
-            start.Environment["PYTHONPATH"] = string.IsNullOrEmpty(pythonPath)
-                ? "/tmp/dissect-esedb"
-                : $"/tmp/dissect-esedb{System.IO.Path.PathSeparator}{pythonPath}";
+
+            ConfigurePythonEnvironment(start);
 
             using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("Failed to start esedb-wrapper.py");
             var json = process.StandardOutput.ReadToEnd();
@@ -151,6 +147,22 @@ namespace Microsoft.Isam.Esent.Interop
             }
             if (element.ValueKind == JsonValueKind.String) return element.GetString();
             return null;
+        }
+
+        private static void ConfigurePythonEnvironment(System.Diagnostics.ProcessStartInfo start)
+        {
+            var configuredPath = Environment.GetEnvironmentVariable("NTDSAUDIT_PYTHONPATH");
+            start.Environment.TryGetValue("PYTHONPATH", out var existingPath);
+
+            var paths = new List<string>();
+            if (!string.IsNullOrEmpty(configuredPath)) paths.Add(configuredPath);
+            if (System.IO.Directory.Exists("/tmp/dissect-database")) paths.Add("/tmp/dissect-database");
+            if (!string.IsNullOrEmpty(existingPath)) paths.Add(existingPath);
+
+            if (paths.Count > 0)
+            {
+                start.Environment["PYTHONPATH"] = string.Join(System.IO.Path.PathSeparator, paths.Distinct(StringComparer.Ordinal));
+            }
         }
     }
 

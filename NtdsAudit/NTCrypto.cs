@@ -282,67 +282,41 @@
 
         private static byte[] DecryptDataUsingRc4AndSalt(byte[] key, byte[] salt, byte[] data, int rounds)
         {
-            var hProv = IntPtr.Zero;
-            var hHash = IntPtr.Zero;
-            var hKey = IntPtr.Zero;
+            using var md5 = MD5.Create();
+            var input = key.Concat(Enumerable.Repeat(salt, rounds).SelectMany(x => x)).ToArray();
+            var rc4Key = md5.ComputeHash(input);
+            return CryptRc4(data, rc4Key);
+        }
 
-            // Get handle to the crypto provider
-            if (!NativeMethods.CryptAcquireContext(ref hProv, string.Empty, string.Empty, NativeMethods.PROVRSAFULL, NativeMethods.CRYPTVERIFYCONTEXT))
+        private static byte[] CryptRc4(byte[] data, byte[] key)
+        {
+            var s = new byte[256];
+            var output = new byte[data.Length];
+
+            for (var i = 0; i < s.Length; i++)
             {
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                s[i] = (byte)i;
             }
 
-            // Create MD5 hashing function
-            if (!NativeMethods.CryptCreateHash(hProv, NativeMethods.CALGMD5, IntPtr.Zero, 0, ref hHash))
+            var j = 0;
+            for (var i = 0; i < s.Length; i++)
             {
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                j = (j + s[i] + key[i % key.Length]) & 0xff;
+                (s[i], s[j]) = (s[j], s[i]);
             }
 
-            // Hash the key
-            if (!NativeMethods.CryptHashData(hHash, key, (uint)key.Length, 0))
+            var iIndex = 0;
+            j = 0;
+            for (var position = 0; position < data.Length; position++)
             {
-                NativeMethods.CryptDestroyHash(hHash);
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                iIndex = (iIndex + 1) & 0xff;
+                j = (j + s[iIndex]) & 0xff;
+                (s[iIndex], s[j]) = (s[j], s[iIndex]);
+                var k = s[(s[iIndex] + s[j]) & 0xff];
+                output[position] = (byte)(data[position] ^ k);
             }
 
-            // Hash the salt for the specified number of rounds
-            for (var i = 0; i < rounds; i++)
-            {
-                if (!NativeMethods.CryptHashData(hHash, salt, (uint)salt.Length, 0))
-                {
-                    NativeMethods.CryptDestroyHash(hHash);
-                    NativeMethods.CryptReleaseContext(hProv, 0);
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                }
-            }
-
-            // Derive the RC4 key
-            if (!NativeMethods.CryptDeriveKey(hProv, NativeMethods.CALGRC4, hHash, 0, ref hKey))
-            {
-                NativeMethods.CryptDestroyHash(hHash);
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            uint pdwDataLen = (uint)data.Length;
-
-            // Encrypt/Decrypt
-            if (!NativeMethods.CryptEncrypt(hKey, IntPtr.Zero, 1, 0, data, ref pdwDataLen, (uint)data.Length))
-            {
-                NativeMethods.CryptDestroyKey(hKey);
-                NativeMethods.CryptDestroyHash(hHash);
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            NativeMethods.CryptDestroyKey(hKey);
-            NativeMethods.CryptDestroyHash(hHash);
-            NativeMethods.CryptReleaseContext(hProv, 0);
-
-            return data;
+            return output;
         }
 
         /// <summary>
@@ -359,70 +333,20 @@
         {
             var data1 = data.Take(data.Length / 2).ToArray();
             var data2 = data.Skip(data.Length / 2).ToArray();
-            var hProv = IntPtr.Zero;
-            var hKey1 = IntPtr.Zero;
-            var hKey2 = IntPtr.Zero;
 
-            var keyHeader = new NativeMethods.PUBLICKEYSTRUC
-            {
-                BType = NativeMethods.PLAINTEXTKEYBLOB,
-                BVersion = NativeMethods.CURBLOBVERSION,
-                Reserved = 0,
-                AiKeyAlg = NativeMethods.CALGDES,
-            };
+            var decrypted1 = DecryptDesBlock(data1, key1);
+            var decrypted2 = DecryptDesBlock(data2, key2);
 
-            var keyHeaderBytes = StructureToByteArray(keyHeader);
+            return [.. decrypted1, .. decrypted2];
+        }
 
-            var keyWithHeader1 = keyHeaderBytes.Concat(BitConverter.GetBytes(data1.Length)).Concat(key1).ToArray();
-            var keyWithHeader2 = keyHeaderBytes.Concat(BitConverter.GetBytes(data2.Length)).Concat(key2).ToArray();
-
-            // Get handle to the crypto provider
-            if (!NativeMethods.CryptAcquireContext(ref hProv, string.Empty, string.Empty, NativeMethods.PROVRSAFULL, NativeMethods.CRYPTVERIFYCONTEXT))
-            {
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            // Import key 1
-            if (!NativeMethods.CryptImportKey(hProv, keyWithHeader1, keyWithHeader1.Length, IntPtr.Zero, 0, ref hKey1))
-            {
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            // Import key 2
-            if (!NativeMethods.CryptImportKey(hProv, keyWithHeader2, keyWithHeader2.Length, IntPtr.Zero, 0, ref hKey2))
-            {
-                NativeMethods.CryptDestroyKey(hKey1);
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            // Decrypt first part of hash
-            uint pdwDataLen1 = (uint)data1.Length;
-            if (!NativeMethods.CryptDecrypt(hKey1, IntPtr.Zero, 0, 0, data1, ref pdwDataLen1))
-            {
-                NativeMethods.CryptDestroyKey(hKey2);
-                NativeMethods.CryptDestroyKey(hKey1);
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            // Decrypt second part of hash
-            uint pdwDataLen2 = (uint)data2.Length;
-            if (!NativeMethods.CryptDecrypt(hKey2, IntPtr.Zero, 0, 0, data2, ref pdwDataLen2))
-            {
-                NativeMethods.CryptDestroyKey(hKey2);
-                NativeMethods.CryptDestroyKey(hKey1);
-                NativeMethods.CryptReleaseContext(hProv, 0);
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            NativeMethods.CryptDestroyKey(hKey2);
-            NativeMethods.CryptDestroyKey(hKey1);
-            NativeMethods.CryptReleaseContext(hProv, 0);
-
-            return [.. data1, .. data2];
+        private static byte[] DecryptDesBlock(byte[] data, byte[] key)
+        {
+            using var des = DES.Create();
+            des.Mode = CipherMode.ECB;
+            des.Padding = PaddingMode.Zeros;
+            using var decryptor = des.CreateDecryptor(key, null);
+            return decryptor.TransformFinalBlock(data, 0, data.Length);
         }
 
         /// <summary>

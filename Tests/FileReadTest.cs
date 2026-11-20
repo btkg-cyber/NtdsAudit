@@ -104,7 +104,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
             NtdsAuditor ntds = TestHelpers.GetAuditor(true, false);
@@ -149,7 +148,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         //TODO: Need to create users with history hashes.
         try
         {
@@ -203,7 +201,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithCrack()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
             NtdsAuditor ntds = TestHelpers.GetAuditor(true, false, TestHelpers.WordlistPath);
@@ -258,7 +255,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory_WithCrack()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         //TODO: Need to create users with history hashes.
         try
         {
@@ -333,7 +329,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_OUFilter()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
             NtdsAuditor ntds = TestHelpers.GetAuditor(true, false, ouFilter: TestHelpers.OuFilterPath);
@@ -352,7 +347,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory_OUFilter()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
             NtdsAuditor ntds = TestHelpers.GetAuditor(true, true, ouFilter: TestHelpers.OuFilterPath);
@@ -371,7 +365,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithCrack_OUFilter()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
             NtdsAuditor ntds = TestHelpers.GetAuditor(true, false, TestHelpers.WordlistPath, TestHelpers.OuFilterPath);
@@ -390,7 +383,6 @@ public class NTDSAudit_FileRead_Test
     [Test]
     public void LoadValidNTDS_Dump_WithHistory_WithCrack_OUFilter()
     {
-        TestHelpers.SkipPasswordDecryptionTestOnLinux();
         try
         {
             NtdsAuditor ntds = TestHelpers.GetAuditor(true, true, TestHelpers.WordlistPath, TestHelpers.OuFilterPath);

@@ -2,7 +2,6 @@
 {
     using System.Collections.Concurrent;
     using CODA.NtdsAudit;
-    using NUnit.Framework;
 
     internal static class TestHelpers
     {
@@ -36,14 +35,6 @@
             if (NtdsAuditor.ShowDebugOutput)
                 Console.WriteLine($"Test auditor cache miss: dump={dump}, history={history}, wordlist={wordlist.Length > 0}, OU={ouFilter.Length > 0} in {stopwatch.Elapsed}");
             return cached;
-        }
-
-        internal static void SkipPasswordDecryptionTestOnLinux()
-        {
-            if (OperatingSystem.IsLinux())
-            {
-                Assert.Ignore("Password decryption is not implemented on Linux.");
-            }
         }
 
         private static string FindRepositoryRoot()

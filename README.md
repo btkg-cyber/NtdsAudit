@@ -89,7 +89,7 @@ Windows continues to use `Microsoft.Database.ManagedEsent`.
 To download locally:
 
 ```
-git clone https://github.com/btkg-cyber/ntdsaudit.git
+git clone https://github.com/codagroup/ntdsaudit.git
 ```
 
 Build the debug variant:

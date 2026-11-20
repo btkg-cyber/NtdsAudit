@@ -5,7 +5,7 @@
     using System.Globalization;
     using System.Linq;
     using static System.FormattableString;
-    using CODA.RegistryParser;
+    using Registry;
 
     /// <summary>
     /// Provides methods for extracting the system key.
@@ -28,10 +28,12 @@
             // Load the registry hive
             var hive = new RegistryHiveOnDemand(systemHivePath);
 
-            if (hive.GetKey("Select") is not null)
+            var selectKey = hive.GetKey("Select");
+
+            if (selectKey is not null)
             {
                 // Get the current control set version from the hive
-                var currentControlSetVersion = int.Parse(hive.GetKey("Select")!.Values[0].ValueData, CultureInfo.InvariantCulture);
+                var currentControlSetVersion = int.Parse(Convert.ToString(selectKey.Values[0].ValueData, CultureInfo.InvariantCulture)!, CultureInfo.InvariantCulture);
 
                 // Get the class name of the four subkeys in which the sytem key is stored, and convert to hex to get the scrambled system key
                 
